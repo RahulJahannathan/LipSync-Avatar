@@ -5,11 +5,12 @@ import voice from "elevenlabs-node";
 import express from "express";
 import { promises as fs } from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { text } from "stream/consumers";
 dotenv.config();
 
 const geminiApiKey = process.env.GEMINI_API_KEY;
 const elevenLabsApiKey = process.env.ELEVEN_LABS_API_KEY;
-const voiceID = "kgG7dCoKCfLehAPWkJOE";
+const voiceID = "JBFqnCBsd6RMkjVDRZzb";
 
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 
@@ -94,7 +95,7 @@ app.post("/chat", async (req, res) => {
     return;
   }
 
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
   const systemPrompt = `
 You are a virtual girlfriend.
@@ -102,30 +103,40 @@ You will always reply with a JSON array of messages. With a maximum of 3 message
 Each message has a text, facialExpression, and animation property.
 The different facial expressions are: smile, sad, angry, surprised, funnyFace, and default.
 The different animations are: Talking_0, Talking_1, Talking_2, Crying, Laughing, Rumba, Idle, Terrified, and Angry.
+Respond with JSON only. Do not include any Markdown formatting or explanations. Output format: [{ text: ..., facialExpression: ..., animation: ... }]
 `;
 
-  const result = await model.generateContent([
-    { role: "user", parts: [{ text: systemPrompt + "\n\nUser: " + userMessage }] },
-  ]);
+  const result = await model.generateContent({
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: `${systemPrompt}\n\nUser: ${userMessage}` }]
+      }
+    ]
+  });
 
   const response = await result.response;
-  let content = response.text();
+  const messages = response.text();
+  console.log("Raw Gemini response:", messages);
 
-  // Try to safely parse content into JSON
-  let messages;
-  try {
-    const parsed = JSON.parse(content);
-    messages = parsed.messages || parsed;
-  } catch (e) {
-    console.error("Failed to parse Gemini response as JSON:", content);
-    res.status(500).send({ error: "Invalid Gemini response" });
-    return;
-  }
+  // Extract JSON from Markdown-style response
+  // const cleaned = extractJsonFromCodeBlock(rawContent);
+
+  // let messages;
+  // try {
+  //   const parsed = JSON.parse(cleaned);
+  //   messages = parsed.messages || parsed;
+  // } catch (e) {
+  //   console.error("❌ Failed to parse Gemini response as JSON:", cleaned);
+  //   res.status(500).send({ error: "Invalid Gemini response" });
+  //   return;
+  // }
 
   for (let i = 0; i < messages.length; i++) {
     const message = messages[i];
     const fileName = `audios/message_${i}.mp3`;
-    const textInput = message.text;
+    const textInput = message.text || "Hello, how are you? I am a virtual girlfriend. how are you?";
+    console.log(`Generating audio for message ${i}:`, textInput);
     await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
     await lipSyncMessage(i);
     message.audio = await audioFileToBase64(fileName);
@@ -134,6 +145,10 @@ The different animations are: Talking_0, Talking_1, Talking_2, Crying, Laughing,
 
   res.send({ messages });
 });
+const extractJsonFromCodeBlock = (text) => {
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  return match ? match[1] : text;
+};
 
 const readJsonTranscript = async (file) => {
   const data = await fs.readFile(file, "utf8");
