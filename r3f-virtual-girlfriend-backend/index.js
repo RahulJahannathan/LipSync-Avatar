@@ -6,15 +6,56 @@ import { promises as fs } from "fs";
 import voice from "elevenlabs-node";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-dotenv.config(); // ✅ Load environment variables first
+dotenv.config();
 
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const elevenLabsApiKey = process.env.ELEVEN_LABS_API_KEY;
+const voiceID = "JBFqnCBsd6RMkjVDRZzb";
+
+const genAI = new GoogleGenerativeAI(geminiApiKey);
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ Initialize genAI first, then use it to create the model
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const gemini = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
+
+app.get("/voices", async (req, res) => {
+  res.send(await voice.getVoices(elevenLabsApiKey));
+});
+
+const execCommand = (command) => {
+  return new Promise((resolve, reject) => {
+    exec(command, (error, stdout, stderr) => {
+      if (error) reject(error);
+      resolve(stdout);
+    });
+  });
+};
+
+const audioFileToBase64 = async (filePath) => {
+  const audioBuffer = await fs.readFile(filePath);
+  return `data:audio/mp3;base64,${audioBuffer.toString("base64")}`;
+};
+
+const readJsonTranscript = async (jsonPath) => {
+  const data = await fs.readFile(jsonPath, "utf-8");
+  return JSON.parse(data);
+};
+
+const lipSyncMessage = async (messageIndex) => {
+  const time = new Date().getTime();
+  console.log(`Starting conversion for message ${messageIndex}`);
+  await execCommand(
+    `ffmpeg -y -i audios/message_${messageIndex}.mp3 audios/message_${messageIndex}.wav`
+  );
+  console.log(`Conversion done in ${new Date().getTime() - time}ms`);
+  await execCommand(
+    `rhubarb -f json -o audios/message_${messageIndex}.json audios/message_${messageIndex}.wav -r phonetic`
+  );
+  console.log(`Lip sync done in ${new Date().getTime() - time}ms`);
+};
 
 app.post("/chat", async (req, res) => {
   try {
@@ -24,46 +65,82 @@ app.post("/chat", async (req, res) => {
 
     console.log("Prompt received from UI:", message);
 
-    const prompt = `
-You are an AI assistant that responds with realistic facial expressions and animations.
+    // Check API Keys
+    if (!elevenLabsApiKey || !geminiApiKey) {
+      const messages = [
+        {
+          text: "Please my dear, don't forget to add your API keys!",
+          audio: await audioFileToBase64("audios/api_0.wav"),
+          lipsync: await readJsonTranscript("audios/api_0.json"),
+          facialExpression: "angry",
+          animation: "Angry",
+        },
+        {
+          text: "You don't want to ruin Wawa Sensei with a crazy Gemini and ElevenLabs bill, right?",
+          audio: await audioFileToBase64("audios/api_1.wav"),
+          lipsync: await readJsonTranscript("audios/api_1.json"),
+          facialExpression: "smile",
+          animation: "Laughing",
+        },
+      ];
+      return res.send({ messages });
+    }
 
-Respond to this message: "${message}"
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-Return only JSON in the following format (no explanation):
-
-[
-  {
-    "text": "<your reply sentence>",
-    "facialExpression": "smile | neutral | angry | sad | surprised",
-    "animation": "Talking_0 | Talking_1 | Idle | Blink"
-  }
-]
+    const systemPrompt = `
+You are a virtual girlfriend.
+You will always reply with a JSON array of messages. With a maximum of 3 messages.
+Each message has a text, facialExpression, and animation property.
+The different facial expressions are: smile, sad, angry, surprised, funnyFace, and default.
+The different animations are: Talking_0, Talking_1, Talking_2, Crying, Laughing, Rumba, Idle, Terrified, and Angry.
+Respond with JSON only. Do not include any Markdown formatting or explanations. Output format: [{ text: ..., facialExpression: ..., animation: ... }]
 `;
 
-    const result = await gemini.generateContent(prompt);
-    const raw = await result.response.text();
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${systemPrompt}\n\nUser: ${message}` }],
+        },
+      ],
+    });
 
-    console.log("Raw Gemini response:", raw);
+    const rawText = await result.response.text();
+    const jsonText = extractJsonFromCodeBlock(rawText);
+    let messages;
 
-    // Extract clean JSON block from Gemini response
-    let cleaned = raw.trim();
-    if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/```json|```/g, "").trim();
+    try {
+      messages = JSON.parse(jsonText);
+    } catch (e) {
+      console.error("❌ Failed to parse Gemini response:", jsonText);
+      return res.status(500).send({ error: "Invalid Gemini JSON response" });
     }
 
-    console.log("Cleaned JSON block:", cleaned);
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      const fileName = `audios/message_${i}.mp3`;
+      const textInput = msg.text || "Hi, I'm your avatar. How are you?";
+      console.log(`Generating audio for message ${i}:`, textInput);
 
-    const parsed = JSON.parse(cleaned); // <-- may throw if invalid
-    if (!Array.isArray(parsed)) {
-      return res.status(500).json({ error: "Expected an array of messages" });
+      await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
+      await lipSyncMessage(i);
+      msg.audio = await audioFileToBase64(fileName);
+      msg.lipsync = await readJsonTranscript(`audios/message_${i}.json`);
     }
 
-    return res.json({ messages: parsed }); // ✅ FRONTEND EXPECTS `messages: []`
-  } catch (error) {
-    console.error("Error in /chat:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    res.send({ messages });
+
+  } catch (err) {
+    console.error("❌ Error in /chat:", err);
+    res.status(500).send({ error: "Internal server error" });
   }
 });
+
+const extractJsonFromCodeBlock = (text) => {
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  return match ? match[1] : text;
+};
 
 const PORT = 3000;
 app.listen(PORT, () => {
