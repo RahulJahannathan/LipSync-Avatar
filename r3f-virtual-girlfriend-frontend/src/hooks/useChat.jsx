@@ -5,33 +5,48 @@ const backendUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const ChatContext = createContext();
 
 export const ChatProvider = ({ children }) => {
-  const chat = async (message) => {
-    setLoading(true);
-    const data = await fetch(`${backendUrl}/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ message }),
-    });
-    const resp = (await data.json()).messages;
-    setMessages((messages) => [...messages, ...resp]);
-    setLoading(false);
-  };
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState();
   const [loading, setLoading] = useState(false);
   const [cameraZoomed, setCameraZoomed] = useState(true);
+
+  const chat = async (message) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${backendUrl}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+
+      const resp = await response.json();
+      console.log("Raw response from server:", resp);
+
+      let newMessages = [];
+
+      // ✅ Support both formats: { messages: [...] } or [...]
+      if (Array.isArray(resp)) {
+        newMessages = resp;
+      } else if (Array.isArray(resp.messages)) {
+        newMessages = resp.messages;
+      } else {
+        throw new Error("Invalid response format from server.");
+      }
+
+      setMessages((prev) => [...prev, ...newMessages]);
+    } catch (err) {
+      console.error("Chat fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onMessagePlayed = () => {
-    setMessages((messages) => messages.slice(1));
+    setMessages((prev) => prev.slice(1));
   };
 
   useEffect(() => {
-    if (messages.length > 0) {
-      setMessage(messages[0]);
-    } else {
-      setMessage(null);
-    }
+    setMessage(messages.length > 0 ? messages[0] : null);
   }, [messages]);
 
   return (
