@@ -50,6 +50,7 @@ const lipSyncMessage = async (message) => {
 
 app.post("/chat", async (req, res) => {
   const userMessage = req.body.message;
+
   if (!userMessage) {
     res.send({
       messages: [
@@ -104,35 +105,41 @@ The different facial expressions are: smile, sad, angry, surprised, funnyFace, a
 The different animations are: Talking_0, Talking_1, Talking_2, Crying, Laughing, Rumba, Idle, Terrified, and Angry.
 `;
 
-  const result = await model.generateContent([
-    { role: "user", parts: [{ text: systemPrompt + "\n\nUser: " + userMessage }] },
-  ]);
-
-  const response = await result.response;
-  let content = response.text();
-
-  // Try to safely parse content into JSON
-  let messages;
   try {
-    const parsed = JSON.parse(content);
-    messages = parsed.messages || parsed;
-  } catch (e) {
-    console.error("Failed to parse Gemini response as JSON:", content);
-    res.status(500).send({ error: "Invalid Gemini response" });
-    return;
-  }
+    const result = await model.generateContent(systemPrompt + "\n\nUser: " + userMessage);
+    const response = await result.response;
+    const content = response.text();
 
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i];
-    const fileName = `audios/message_${i}.mp3`;
-    const textInput = message.text;
-    await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
-    await lipSyncMessage(i);
-    message.audio = await audioFileToBase64(fileName);
-    message.lipsync = await readJsonTranscript(`audios/message_${i}.json`);
-  }
+    console.log("Gemini Output:\n", content);
 
-  res.send({ messages });
+    // Try to extract valid JSON from Gemini response
+    let messages;
+    try {
+      const jsonStart = content.indexOf("{");
+      const jsonEnd = content.lastIndexOf("}");
+      const validJson = content.slice(jsonStart, jsonEnd + 1);
+      messages = JSON.parse(validJson).messages || JSON.parse(validJson);
+    } catch (e) {
+      console.error("Failed to parse Gemini response as JSON:", content);
+      return res.status(500).send({ error: "Gemini response not in expected format." });
+    }
+
+    for (let i = 0; i < messages.length; i++) {
+      const message = messages[i];
+      const fileName = `audios/message_${i}.mp3`;
+      const textInput = message.text;
+      await voice.textToSpeech(elevenLabsApiKey, voiceID, fileName, textInput);
+      await lipSyncMessage(i);
+      message.audio = await audioFileToBase64(fileName);
+      message.lipsync = await readJsonTranscript(`audios/message_${i}.json`);
+    }
+
+    res.send({ messages });
+
+  } catch (error) {
+    console.error("Gemini API Error:", error);
+    res.status(500).send({ error: "Gemini API failed to respond correctly." });
+  }
 });
 
 const readJsonTranscript = async (file) => {
