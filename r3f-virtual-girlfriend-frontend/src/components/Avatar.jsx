@@ -117,11 +117,7 @@ export function Avatar(props) {
 
   useEffect(() => {
     console.log(message);
-    if (!message) {
-      setAnimation("Idle");
-      return;
-    }
-    setAnimation(message.animation);
+    if (!message) return;
     setFacialExpression(message.facialExpression);
     setLipsync(message.lipsync);
     const audio = new Audio("data:audio/mp3;base64," + message.audio);
@@ -130,20 +126,40 @@ export function Avatar(props) {
     audio.onended = onMessagePlayed;
   }, [message]);
 
-  const { animations } = useGLTF("/models/animations.glb");
 
   const group = useRef();
-  const { actions, mixer } = useAnimations(animations, group);
-  const [animation, setAnimation] = useState(
-    animations.find((a) => a.name === "Idle") ? "Idle" : animations[0].name // Check if Idle animation exists otherwise use first animation
-  );
-  useEffect(() => {
-    actions[animation]
+  
+  // Load animations only once and play "Idle"
+const { animations } = useGLTF("/models/animations.glb");
+const { actions, mixer } = useAnimations(animations, group);
+const [animationPlayed, setAnimationPlayed] = useState(false);
+const [animation] = useState(
+  animations.find((a) => a.name === "Idle") ? "Idle" : animations[0]?.name
+);
+
+
+ useEffect(() => {
+  if (!animationPlayed && actions[animation]) {
+    const action = actions[animation];
+
+    action
       .reset()
-      .fadeIn(mixer.stats.actions.inUse === 0 ? 0 : 0.5)
-      .play();
-    return () => actions[animation].fadeOut(0.5);
-  }, [animation]);
+      .setLoop(THREE.LoopOnce, 1) // Play once only
+      .clampWhenFinished = true; // Hold final frame
+    action.fadeIn(0.5).play();
+
+    const onFinished = () => {
+      setAnimationPlayed(true);
+    };
+
+    mixer.addEventListener("finished", onFinished);
+
+    return () => {
+      mixer.removeEventListener("finished", onFinished);
+    };
+  }
+}, [animation, actions, mixer, animationPlayed]);
+
 
   const lerpMorphTarget = (target, value, speed = 0.1) => {
     scene.traverse((child) => {
@@ -234,11 +250,6 @@ export function Avatar(props) {
       setWinkRight(true);
       setTimeout(() => setWinkRight(false), 300);
     }),
-    animation: {
-      value: animation,
-      options: animations.map((a) => a.name),
-      onChange: (value) => setAnimation(value),
-    },
     facialExpression: {
       options: Object.keys(facialExpressions),
       onChange: (value) => setFacialExpression(value),
