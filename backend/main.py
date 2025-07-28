@@ -36,25 +36,32 @@ app.add_middleware(
 
 # --- STT (Vosk Setup) ---
 VOSK_MODEL_DIR = "vosk-model-small-en-us-0.15"  # use your downloaded path
-OLLAMA_MODEL = "tkdkid1000/phi-1_5:latest"
+OLLAMA_MODEL = "phi:2.7b"
 
 vosk_model = Model(VOSK_MODEL_DIR)
 @app.on_event("startup")
 def preload_ollama_model():
-    try:
-        requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": OLLAMA_MODEL,
-                "prompt": "Preloading model for warm start.",
-                "stream": False
-            },
-            timeout=10
-        )
-        print("✅ Ollama model preloaded.")
-    except Exception as e:
-        print(f"⚠️ Failed to preload Ollama model: {e}")
-
+    # Try waiting a few seconds in case Ollama is still starting up
+    for i in range(3):
+        try:
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": "Preloading model for warm start.",
+                    "stream": False
+                },
+                timeout=30
+            )
+            print("✅ Ollama model preloaded.")
+            return
+        except requests.exceptions.ConnectionError:
+            print(f"🔁 Ollama not ready yet, retrying in 2s... ({i+1}/3)")
+            time.sleep(2)
+        except Exception as e:
+            print(f"⚠️ Unexpected error while preloading Ollama: {e}")
+            return
+    print("❌ Failed to connect to Ollama after retries.")
 class MessageInput(BaseModel):
     message: str
 
@@ -87,7 +94,7 @@ def generate_audio_espeak(text: str, output_path: Path):
     abs_output_path = output_path.resolve()
 
     # Use female voice f3 and slow speed (130 wpm)
-    command = f'"{exe_path}" -v en-us+f3 -s 130 -w "{abs_output_path}" "{text}"'
+    command = f'"{exe_path}" -v en+f3 -s 140 -w "{abs_output_path}" "{text}"'
 
     result = subprocess.run(
         command,
@@ -104,7 +111,7 @@ def generate_audio_pyttsx3(text: str, output_path: Path):
     engine = pyttsx3.init()
 
     # Set slower rate for natural speech
-    engine.setProperty("rate", 135)
+    engine.setProperty("rate", 150)
 
     # Set female voice if available
     voices = engine.getProperty("voices")
@@ -125,14 +132,14 @@ def get_llm_response(user_message: str) -> str:
     system_prompt = """
     You are Tessa, a highly intelligent and emotionally aware virtual avatar created by Algorithmic Avengers.
     You respond directly and concisely to the user's message.
-    Keep responses under 4 lines, without filler or self-talk.
+    Keep responses under 2 lines, without filler or self-talk.
     Maintain a professional, friendly tone. Fix grammar silently. Avoid hallucination.
     Answer must be related to the question asked .and the answer should be short and sweet.
     """
 
     try:
         response = ollama.chat(
-            model="tkdkid1000/phi-1_5:latest",
+            model="phi:2.7b",
             messages=[
                 {"role": "system", "content": system_prompt.strip()},
                 {"role": "user", "content": user_message.strip()}
