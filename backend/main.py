@@ -36,7 +36,7 @@ app.add_middleware(
 
 # --- STT (Vosk Setup) ---
 VOSK_MODEL_DIR = "vosk-model-small-en-us-0.15"  # use your downloaded path
-OLLAMA_MODEL = "tkdkid1000/phi-1_5:latest"
+OLLAMA_MODEL = "lowcpu-tinyllama"  # Ollama model name
 
 vosk_model = Model(VOSK_MODEL_DIR)
 @app.on_event("startup")
@@ -132,7 +132,7 @@ def get_llm_response(user_message: str) -> str:
 
     try:
         response = ollama.chat(
-            model="tkdkid1000/phi-1_5:latest",
+            model="lowcpu-tinyllama",
             messages=[
                 {"role": "system", "content": system_prompt.strip()},
                 {"role": "user", "content": user_message.strip()}
