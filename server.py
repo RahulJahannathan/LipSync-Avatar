@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
-
+torch.set_num_threads(1)
 # Force CPU
 device = torch.device("cpu")
 
@@ -16,8 +16,8 @@ print("🔧 Loading tokenizer...")
 tokenizer = AutoTokenizer.from_pretrained(base_model)
 
 print("🔧 Loading base model...")
-model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=torch.float32).to(device)
-
+# model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=torch.float32).to(device)
+model = AutoModelForCausalLM.from_pretrained(base_model, torch_dtype=torch.float32)
 print("🔧 Merging LoRA...")
 model = PeftModel.from_pretrained(model, adapter_path).to(device)
 model = model.merge_and_unload()
@@ -45,7 +45,7 @@ def chat(req: ChatRequest):
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
-            max_new_tokens=50,
+            max_new_tokens=25,
             do_sample=True,
             top_k=50,
             top_p=0.9,

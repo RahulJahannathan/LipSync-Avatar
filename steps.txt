@@ -1,0 +1,12 @@
+execute converter.py - creates merged-tinyllama and adds tokenizer 
+
+git clone https://github.com/ggerganov/llama.cpp.git
+cd llama.cpp
+
+python convert_hf_to_gguf.py ../merged-tinyllama --outfile tinyllama.gguf --outtype q8_0 - creates tinyllama.gguf
+
+pip install llama-cpp-python
+pip install cmake
+
+cd llama.cpp
+python ggufinference.py - interactive chat
