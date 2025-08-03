@@ -1,5 +1,4 @@
 from llama_cpp import Llama
-import time
 
 llm = Llama(
     model_path="tinyllama.gguf",
@@ -17,8 +16,6 @@ while True:
 
     prompt = f"### Instruction: {user_input}\n### Response:"
 
-    start = time.time()
-
     print("Bot: ", end="", flush=True)
     for output in llm(
         prompt=prompt,
@@ -29,6 +26,3 @@ while True:
     ):
         token = output["choices"][0]["text"]
         print(token, end="", flush=True)  # print each token as it comes
-
-    end = time.time()
-    print(f"\n⏱️ Inference time: {end - start:.2f} seconds\n")
