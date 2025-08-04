@@ -35,4 +35,4 @@ def text_to_speech(text, filename="output.wav"):
             else:
                 logger.warning(f"Unexpected audio chunk format: {type(chunk)} - {chunk}")
 
-save_audio_to_file("Hello, this is a test of the text-to-speech functionality.")
+text_to_speech("Hello, this is a test of the text-to-speech functionality.")
