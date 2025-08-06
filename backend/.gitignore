@@ -1,5 +1,6 @@
-
 node_modules
 
 audios/message_*
 README.md
+llm/merged-tinyllama
+llm/tinyllama.gguf
