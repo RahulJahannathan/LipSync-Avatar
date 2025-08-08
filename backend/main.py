@@ -2,31 +2,30 @@ import base64
 import json
 import os
 import subprocess
+import time
+import wave
+import logging
+from pathlib import Path
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from pathlib import Path
 from vosk import Model, KaldiRecognizer
 import pyttsx3
-import wave
-import requests
-import ollama
+from llm.tessa_chatbot import TessaChatbot
 
-# --- Directory Setup ---
-AUDIO_DIR = Path("audios")
-BIN_DIR = Path("bin")
-AUDIO_DIR.mkdir(exist_ok=True)
-BIN_DIR.mkdir(exist_ok=True)
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+# --- Setup Logging ---
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# --- Directory Setup ---
+AUDIO_DIR = Path("audios"); AUDIO_DIR.mkdir(exist_ok=True)
+BIN_DIR = Path("bin"); BIN_DIR.mkdir(exist_ok=True)
 
+# --- FastAPI Setup ---
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+<<<<<<< HEAD
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -62,9 +61,20 @@ def preload_ollama_model():
             print(f"⚠️ Unexpected error while preloading Ollama: {e}")
             return
     print("❌ Failed to connect to Ollama after retries.")
+=======
+# --- Vosk STT Setup ---
+VOSK_MODEL_DIR = "vosk-model-small-en-us-0.15"
+vosk_model = Model(VOSK_MODEL_DIR)
+
+# --- Input Schema ---
+>>>>>>> d4ca12f943ba9b1228df065531f53802261f84f6
 class MessageInput(BaseModel):
     message: str
 
+class ChatRequest(BaseModel):
+    message: str
+
+# --- Utility Functions ---
 def exec_command(command: str):
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     if result.returncode != 0:
@@ -80,9 +90,9 @@ def read_json(path: Path):
         return json.load(f)
 
 def generate_lipsync(wav_path: Path, json_path: Path):
-    rhubarb_path = BIN_DIR / ("rhubarb.exe" if os.name == "nt" else "rhubarb")
-    exec_command(f'"{rhubarb_path}" -f json -o "{json_path}" "{wav_path}" -r phonetic')
+    exec_command(f'"{BIN_DIR / ("rhubarb.exe" if os.name == "nt" else "rhubarb")}" -f json -o "{json_path}" "{wav_path}" -r phonetic')
 
+<<<<<<< HEAD
 def generate_audio_espeak(text: str, output_path: Path):
     espeak_dir = Path(__file__).parent / "eSpeak"
     exe_path = espeak_dir / "espeak.exe"
@@ -119,14 +129,35 @@ def generate_audio_pyttsx3(text: str, output_path: Path):
 
     for voice in voices:
         if any(keyword in voice.name.lower() or keyword in voice.id.lower() for keyword in female_keywords):
+=======
+def generate_audio_pyttsx3(text: str, output_path: Path):
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 135)
+    for voice in engine.getProperty("voices"):
+        if any(k in voice.name.lower() or k in voice.id.lower() for k in ["zira", "hazel", "female"]):
+>>>>>>> d4ca12f943ba9b1228df065531f53802261f84f6
             engine.setProperty("voice", voice.id)
             break
-
-    # Save to file
     engine.save_to_file(text, str(output_path.resolve()))
     engine.runAndWait()
 
+# --- LLM Chat Setup ---
+class ChatService:
+    def __init__(self, chatbot: TessaChatbot):
+        self.chatbot = chatbot
+
+    def chat(self, message: str) -> str:
+        return self.chatbot.get_response(message)
+
+global_app = app
+
+@app.on_event("startup")
+def startup_event():
+    tessa = TessaChatbot()
+    global_app.state.chat_service = ChatService(tessa)
+
 def get_llm_response(user_message: str) -> str:
+<<<<<<< HEAD
     logger.info(f"🔍 Calling LLM for user input: {user_message}")
 
     system_prompt = """
@@ -149,25 +180,32 @@ def get_llm_response(user_message: str) -> str:
         llm_text = response['message']['content'].strip()
         logger.info(f"✅ LLM Response: {llm_text}")
         return llm_text
+=======
+    try:
+        return global_app.state.chat_service.chat(user_message).strip()
+>>>>>>> d4ca12f943ba9b1228df065531f53802261f84f6
     except Exception as e:
         logger.error(f"❌ LLM Error: {e}")
-        return f"[LLM Error] {str(e)}"
+        return "[LLM Error]"
 
+# --- Chat API ---
 @app.post("/chat")
 async def chat(input: MessageInput):
-    logger.info("📥 Received /chat request")
-    wav_path = AUDIO_DIR / "message.wav"
-    json_path = AUDIO_DIR / "message.json"
+    logger.info("📥 /chat request")
+    wav_path, json_path = AUDIO_DIR / "message.wav", AUDIO_DIR / "message.json"
 
+    t0 = time.time()
     llm_text = get_llm_response(input.message)
+    logger.info(llm_text)
+    t1 = time.time(); logger.info(f"🧠 LLM: {t1 - t0:.2f}s")
 
-    logger.info("🎤 Generating audio using pyttsx3")
     generate_audio_pyttsx3(llm_text, wav_path)
+    t2 = time.time(); logger.info(f"🔊 Audio: {t2 - t1:.2f}s")
 
-    logger.info("🗣️ Generating lipsync with Rhubarb")
     generate_lipsync(wav_path, json_path)
+    t3 = time.time(); logger.info(f"🗣️ Lipsync: {t3 - t2:.2f}s")
 
-    logger.info("✅ Returning response for /chat")
+    logger.info(f"✅ Total time: {t3 - t0:.2f}s")
     return {
         "messages": [{
             "text": llm_text,
@@ -178,45 +216,35 @@ async def chat(input: MessageInput):
         }]
     }
 
-
+# --- Voice API ---
 @app.post("/voice")
 async def voice(file: UploadFile = File(...)):
-    logger.info("📥 Received /voice request")
+    logger.info("📥 /voice request")
     webm_path = AUDIO_DIR / "input.webm"
-    wav_input_path = AUDIO_DIR / "input.wav"
-    wav_output_path = AUDIO_DIR / "output.wav"
-    json_path = AUDIO_DIR / "output.json"
+    wav_input_path, wav_output_path, json_path = AUDIO_DIR / "input.wav", AUDIO_DIR / "output.wav", AUDIO_DIR / "output.json"
 
-    with open(webm_path, "wb") as f:
-        f.write(await file.read())
-    logger.info("🎧 Uploaded voice file saved")
-
+    t0 = time.time()
+    with open(webm_path, "wb") as f: f.write(await file.read())
     exec_command(f'ffmpeg -y -i "{webm_path}" -ar 16000 -ac 1 "{wav_input_path}"')
-    logger.info("🔄 Converted voice to 16kHz mono wav")
-
     wf = wave.open(str(wav_input_path), "rb")
     rec = KaldiRecognizer(vosk_model, wf.getframerate())
-
-    result = ""
     while True:
         data = wf.readframes(4000)
-        if len(data) == 0:
-            break
-        if rec.AcceptWaveform(data):
-            pass
+        if not data: break
+        rec.AcceptWaveform(data)
+    transcribed = json.loads(rec.FinalResult()).get("text", "").strip()
+    t1 = time.time(); logger.info(f"📝 Transcribe: {t1 - t0:.2f}s")
 
-    transcribed_text = json.loads(rec.FinalResult()).get("text", "").strip()
-    logger.info(f"📝 Transcribed text: {transcribed_text}")
+    llm_text = get_llm_response(transcribed)
+    t2 = time.time(); logger.info(f"🧠 LLM: {t2 - t1:.2f}s")
 
-    llm_text = get_llm_response(transcribed_text)
-
-    logger.info("🎤 Generating response audio")
     generate_audio_pyttsx3(llm_text, wav_output_path)
+    t3 = time.time(); logger.info(f"🔊 Audio: {t3 - t2:.2f}s")
 
-    logger.info("🗣️ Generating lipsync with Rhubarb")
     generate_lipsync(wav_output_path, json_path)
+    t4 = time.time(); logger.info(f"🗣️ Lipsync: {t4 - t3:.2f}s")
 
-    logger.info("✅ Returning response for /voice")
+    logger.info(f"✅ Total time: {t4 - t0:.2f}s")
     return {
         "messages": [{
             "text": llm_text,
@@ -229,4 +257,4 @@ async def voice(file: UploadFile = File(...)):
 
 @app.get("/")
 async def root():
-    return {"status": "✅ Edge-Optimized FastAPI with Vosk + eSpeak is running"}
+    return {"status": "✅ Optimized FastAPI with Vosk + Tessa is running"}

@@ -91,7 +91,6 @@ const facialExpressions = {
     tongueOut: 0.9618479575523053,
   },
 };
-
 const corresponding = {
   A: "viseme_PP",
   B: "viseme_kk",
@@ -103,6 +102,18 @@ const corresponding = {
   H: "viseme_TH",
   X: "viseme_PP",
 };
+// const corresponding = {
+//   A: "PP",
+//   B: "kk",
+//   C: "ih",
+//   D: "aa",
+//   E: "oh",
+//   F: "ou",
+//   G: "FF",
+//   H: "TH",
+//   X: "PP",
+// };
+
 
 let setupMode = false;
 
@@ -110,6 +121,7 @@ export function Avatar(props) {
   const { nodes, materials, scene } = useGLTF(
     "/models/6884ab64b7044236df6bd3a0.glb"
   );
+  
 
   const { message, onMessagePlayed, chat } = useChat();
 
