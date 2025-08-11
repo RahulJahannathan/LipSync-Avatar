@@ -1,0 +1,53 @@
+from pathlib import Path
+import pyttsx3
+
+def generate_audio_female_pyttsx3(text: str, output_path: Path):
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 135)  # Speech speed
+
+    for voice in engine.getProperty("voices"):
+        if any(k in voice.name.lower() or k in voice.id.lower() for k in ["zira", "hazel", "female", "woman"]):
+            engine.setProperty("voice", voice.id)
+            break
+
+    engine.save_to_file(text, str(output_path.resolve()))
+    engine.runAndWait()
+
+
+def generate_audio_male_pyttsx3(text: str, output_path: Path):
+    engine = pyttsx3.init()
+    engine.setProperty("rate", 135)  # Speech speed
+
+    for voice in engine.getProperty("voices"):
+        if any(k in voice.name.lower() or k in voice.id.lower() for k in ["david", "male", "man", "barry"]):
+            engine.setProperty("voice", voice.id)
+            break
+
+    engine.save_to_file(text, str(output_path.resolve()))
+    engine.runAndWait()
+
+
+# ----------------
+# Example Execution
+# ----------------
+if __name__ == "__main__":
+    text_sample = (
+    "Good afternoon, ladies and gentlemen. "
+    "I would like to extend a warm welcome to all attendees joining us today "
+    "for this important business conference. "
+    "Over the course of the next few hours, we will be discussing strategic initiatives, "
+    "market expansion opportunities, and innovative approaches to problem-solving, "
+    "with the goal of fostering growth and collaboration across our global network."
+
+)
+
+    female_output = Path("female_voice_test.wav")
+    male_output = Path("male_voice_test.wav")
+
+    print("Generating female voice...")
+    generate_audio_female_pyttsx3(text_sample, female_output)
+    print(f"Female voice saved to: {female_output.resolve()}")
+
+    print("Generating male voice...")
+    generate_audio_male_pyttsx3(text_sample, male_output)
+    print(f"Male voice saved to: {male_output.resolve()}")
