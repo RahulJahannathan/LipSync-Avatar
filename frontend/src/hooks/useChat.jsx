@@ -14,13 +14,28 @@ export const ChatProvider = ({ children }) => {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
+  // Helper function to get the character name from localStorage
+  const getCharacterName = () => {
+    let name = "Tessa"; // default
+    const stored = localStorage.getItem("selectedCostume");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.id >= 9 && parsed.id <= 15) {
+        name = "Hardin";
+      }
+    }
+    return name;
+  };
+
   const chat = async (message) => {
     try {
       setLoading(true);
+      const name = getCharacterName();
+
       const response = await fetch(`${backendUrl}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, name }), // send name too
       });
 
       const resp = await response.json();
@@ -35,7 +50,9 @@ export const ChatProvider = ({ children }) => {
 
   const sendAudioToBackend = async (audioBlob) => {
     const formData = new FormData();
+    const name = getCharacterName();
     formData.append("file", audioBlob, "voice.webm");
+    formData.append("name", name); // send name in form data
 
     try {
       setLoading(true);

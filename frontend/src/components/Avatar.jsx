@@ -91,6 +91,7 @@ const facialExpressions = {
     tongueOut: 0.9618479575523053,
   },
 };
+
 const corresponding = {
   A: "viseme_PP",
   B: "viseme_kk",
@@ -102,56 +103,75 @@ const corresponding = {
   H: "viseme_TH",
   X: "viseme_PP",
 };
-// const corresponding = {
-//   A: "PP",
-//   B: "kk",
-//   C: "ih",
-//   D: "aa",
-//   E: "oh",
-//   F: "ou",
-//   G: "FF",
-//   H: "TH",
-//   X: "PP",
-// };
-
 
 let setupMode = false;
-
 export function Avatar(props) {
-  const { nodes, materials, scene } = useGLTF(
-    "/models/6884ab64b7044236df6bd3a0.glb"
-  );
-  
+  // Define the actual default model path as a constant
+const DEFAULT_MODEL_PATH = "/models/tessa_formal_blue.glb";
 
-  const { message, onMessagePlayed, chat } = useChat();
+let modelPathRef = useRef(DEFAULT_MODEL_PATH);
+let [reloadKey, setReloadKey] = useState(0);
+let [isDefaultModel, setIsDefaultModel] = useState(true);
 
-  const [lipsync, setLipsync] = useState();
+let group = useRef();
 
-  useEffect(() => {
-    console.log(message);
-    if (!message) return;
-    setFacialExpression(message.facialExpression);
-    setLipsync(message.lipsync);
-    const audio = new Audio("data:audio/mp3;base64," + message.audio);
-    audio.play();
-    setAudio(audio);
-    audio.onended = onMessagePlayed;
-  }, [message]);
-
-
-  const group = useRef();
-  
-  // Load animations only once and play "Idle"
-const { animations } = useGLTF("/models/animations.glb");
-const { actions, mixer } = useAnimations(animations, group);
-const [animationPlayed, setAnimationPlayed] = useState(false);
-const [animation] = useState(
+// Load animations only once and play "Idle"
+let { animations } = useGLTF("/models/animations.glb");
+let { actions, mixer } = useAnimations(animations, group);
+let [animationPlayed, setAnimationPlayed] = useState(false);
+let [animation] = useState(
   animations.find((a) => a.name === "Idle") ? "Idle" : animations[0]?.name
 );
 
+useEffect(() => {
+  const updateModel = () => {
+    const stored = localStorage.getItem("selectedCostume");
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      modelPathRef.current = `/models/${parsed.model}.glb`;
+      setIsDefaultModel(false);
+      setReloadKey(prev => prev + 1);
+    } else {
+      modelPathRef.current = DEFAULT_MODEL_PATH;
+      setIsDefaultModel(modelPathRef.current === DEFAULT_MODEL_PATH);
+      setReloadKey(prev => prev + 1);
+    }
+  };
 
- useEffect(() => {
-  if (!animationPlayed && actions[animation]) {
+  // Check if the initial path matches the default
+  setIsDefaultModel(modelPathRef.current === DEFAULT_MODEL_PATH);
+
+  // Load initial model from localStorage
+  updateModel();
+
+  window.addEventListener("costumeChange", updateModel);
+  return () => {
+    window.removeEventListener("costumeChange", updateModel);
+  };
+}, []);
+
+// Rest of your code remains the same...
+
+// Reload GLTF whenever reloadKey changes
+const { nodes, materials, scene } = useGLTF(modelPathRef.current)
+
+const { message, onMessagePlayed, chat } = useChat();
+const [lipsync, setLipsync] = useState();
+
+useEffect(() => {
+  console.log(message);
+  if (!message) return;
+  setFacialExpression(message.facialExpression);
+  setLipsync(message.lipsync);
+  const audio = new Audio("data:audio/mp3;base64," + message.audio);
+  audio.play();
+  setAudio(audio);
+  audio.onended = onMessagePlayed;
+}, [message]);
+
+useEffect(() => {
+  // Only play animation if it's the default model
+  if (isDefaultModel && !animationPlayed && actions[animation]) {
     const action = actions[animation];
 
     action
@@ -170,9 +190,7 @@ const [animation] = useState(
       mixer.removeEventListener("finished", onFinished);
     };
   }
-}, [animation, actions, mixer, animationPlayed]);
-
-
+}, [animation, actions, mixer, animationPlayed, isDefaultModel]);
   const lerpMorphTarget = (target, value, speed = 0.1) => {
     scene.traverse((child) => {
       if (child.isSkinnedMesh && child.morphTargetDictionary) {
@@ -397,5 +415,5 @@ const [animation] = useState(
   );
 }
 
-useGLTF.preload("/models/6884ab64b7044236df6bd3a0.glb");
+useGLTF.preload("/models/tessa_formal_brown.glb");
 useGLTF.preload("/models/animations.glb");

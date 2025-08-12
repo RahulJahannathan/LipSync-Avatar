@@ -6,7 +6,7 @@ import time
 import wave
 import logging
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File , Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from vosk import Model, KaldiRecognizer
@@ -32,6 +32,7 @@ vosk_model = Model(VOSK_MODEL_DIR)
 # --- Input Schema ---
 class MessageInput(BaseModel):
     message: str
+    name: str
 
 class ChatRequest(BaseModel):
     message: str
@@ -54,13 +55,21 @@ def read_json(path: Path):
 def generate_lipsync(wav_path: Path, json_path: Path):
     exec_command(f'"{BIN_DIR / ("rhubarb.exe" if os.name == "nt" else "rhubarb")}" -f json -o "{json_path}" "{wav_path}" -r phonetic')
 
-def generate_audio_pyttsx3(text: str, output_path: Path):
+def generate_audio_pyttsx3(text: str, output_path: Path, name: str):
     engine = pyttsx3.init()
     engine.setProperty("rate", 135)
+
+    # Choose voice based on character name
     for voice in engine.getProperty("voices"):
-        if any(k in voice.name.lower() or k in voice.id.lower() for k in ["zira", "hazel", "female"]):
-            engine.setProperty("voice", voice.id)
-            break
+        if name.lower() == "tessa":
+            if any(k in voice.name.lower() or k in voice.id.lower() for k in ["zira", "hazel", "female"]):
+                engine.setProperty("voice", voice.id)
+                break
+        elif name.lower() == "hardin":
+            if any(k in voice.name.lower() or k in voice.id.lower() for k in ["david", "male"]):
+                engine.setProperty("voice", voice.id)
+                break
+
     engine.save_to_file(text, str(output_path.resolve()))
     engine.runAndWait()
 
@@ -97,7 +106,8 @@ async def chat(input: MessageInput):
     logger.info(llm_text)
     t1 = time.time(); logger.info(f"🧠 LLM: {t1 - t0:.2f}s")
 
-    generate_audio_pyttsx3(llm_text, wav_path)
+    # Pass name from frontend
+    generate_audio_pyttsx3(llm_text, wav_path, input.name)
     t2 = time.time(); logger.info(f"🔊 Audio: {t2 - t1:.2f}s")
 
     generate_lipsync(wav_path, json_path)
@@ -116,19 +126,21 @@ async def chat(input: MessageInput):
 
 # --- Voice API ---
 @app.post("/voice")
-async def voice(file: UploadFile = File(...)):
+async def voice(file: UploadFile = File(...), name: str = Form(...)):
     logger.info("📥 /voice request")
     webm_path = AUDIO_DIR / "input.webm"
     wav_input_path, wav_output_path, json_path = AUDIO_DIR / "input.wav", AUDIO_DIR / "output.wav", AUDIO_DIR / "output.json"
 
     t0 = time.time()
-    with open(webm_path, "wb") as f: f.write(await file.read())
+    with open(webm_path, "wb") as f:
+        f.write(await file.read())
     exec_command(f'ffmpeg -y -i "{webm_path}" -ar 16000 -ac 1 "{wav_input_path}"')
     wf = wave.open(str(wav_input_path), "rb")
     rec = KaldiRecognizer(vosk_model, wf.getframerate())
     while True:
         data = wf.readframes(4000)
-        if not data: break
+        if not data:
+            break
         rec.AcceptWaveform(data)
     transcribed = json.loads(rec.FinalResult()).get("text", "").strip()
     t1 = time.time(); logger.info(f"📝 Transcribe: {t1 - t0:.2f}s")
@@ -136,7 +148,8 @@ async def voice(file: UploadFile = File(...)):
     llm_text = get_llm_response(transcribed)
     t2 = time.time(); logger.info(f"🧠 LLM: {t2 - t1:.2f}s")
 
-    generate_audio_pyttsx3(llm_text, wav_output_path)
+    # Pass name from frontend
+    generate_audio_pyttsx3(llm_text, wav_output_path, name)
     t3 = time.time(); logger.info(f"🔊 Audio: {t3 - t2:.2f}s")
 
     generate_lipsync(wav_output_path, json_path)
