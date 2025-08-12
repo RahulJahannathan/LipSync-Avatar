@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from vosk import Model, KaldiRecognizer
 import pyttsx3
 from llm.tessa_chatbot import TessaChatbot
+import re
 
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -103,6 +104,8 @@ async def chat(input: MessageInput):
 
     t0 = time.time()
     llm_text = get_llm_response(input.message)
+    # llm_text = re.sub(r'[^A-Za-z\s]', '', llm_text)
+    # llm_text = re.sub(r'\s+', ' ', llm_text).strip()
     logger.info(llm_text)
     t1 = time.time(); logger.info(f"🧠 LLM: {t1 - t0:.2f}s")
 
@@ -129,12 +132,23 @@ async def chat(input: MessageInput):
 async def voice(file: UploadFile = File(...), name: str = Form(...)):
     logger.info("📥 /voice request")
     webm_path = AUDIO_DIR / "input.webm"
-    wav_input_path, wav_output_path, json_path = AUDIO_DIR / "input.wav", AUDIO_DIR / "output.wav", AUDIO_DIR / "output.json"
+    wav_input_path = AUDIO_DIR / "input.wav"
+    wav_output_path = AUDIO_DIR / "output.wav"
+    json_path = AUDIO_DIR / "output.json"
 
     t0 = time.time()
+    
+    # 1️⃣ Save uploaded file
+    logger.info("💾 Saving uploaded voice file...")
     with open(webm_path, "wb") as f:
         f.write(await file.read())
+    
+    # 2️⃣ Convert to WAV
+    logger.info("🎼 Converting WebM → WAV (16kHz mono)...")
     exec_command(f'ffmpeg -y -i "{webm_path}" -ar 16000 -ac 1 "{wav_input_path}"')
+
+    # 3️⃣ Transcribe speech
+    logger.info("📝 Starting speech recognition...")
     wf = wave.open(str(wav_input_path), "rb")
     rec = KaldiRecognizer(vosk_model, wf.getframerate())
     while True:
@@ -143,19 +157,31 @@ async def voice(file: UploadFile = File(...), name: str = Form(...)):
             break
         rec.AcceptWaveform(data)
     transcribed = json.loads(rec.FinalResult()).get("text", "").strip()
-    t1 = time.time(); logger.info(f"📝 Transcribe: {t1 - t0:.2f}s")
+    t1 = time.time()
+    logger.info(transcribed)
+    logger.info(f"📝 Transcription complete in {t1 - t0:.2f}s → '{transcribed}'")
 
+    # 4️⃣ LLM response
+    logger.info("🧠 Sending transcription to LLM...")
     llm_text = get_llm_response(transcribed)
-    t2 = time.time(); logger.info(f"🧠 LLM: {t2 - t1:.2f}s")
+    t2 = time.time()
+    logger.info(f"🧠 LLM complete in {t2 - t1:.2f}s → '{llm_text}'")
 
-    # Pass name from frontend
+    # 5️⃣ Generate TTS audio
+    logger.info("🔊 Generating voice output...")
     generate_audio_pyttsx3(llm_text, wav_output_path, name)
-    t3 = time.time(); logger.info(f"🔊 Audio: {t3 - t2:.2f}s")
+    t3 = time.time()
+    logger.info(f"🔊 Audio generation complete in {t3 - t2:.2f}s")
 
+    # 6️⃣ Generate lipsync data
+    logger.info("🗣️ Creating lipsync data...")
     generate_lipsync(wav_output_path, json_path)
-    t4 = time.time(); logger.info(f"🗣️ Lipsync: {t4 - t3:.2f}s")
+    t4 = time.time()
+    logger.info(f"🗣️ Lipsync complete in {t4 - t3:.2f}s")
 
-    logger.info(f"✅ Total time: {t4 - t0:.2f}s")
+    # ✅ Final timing
+    logger.info(f"✅ Total processing time: {t4 - t0:.2f}s")
+
     return {
         "messages": [{
             "text": llm_text,
