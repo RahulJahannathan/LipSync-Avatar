@@ -11,6 +11,9 @@ export const ChatProvider = ({ children }) => {
   const [cameraZoomed, setCameraZoomed] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
 
+  // ✅ New: store LLM raw text for live display
+  const [liveText, setLiveText] = useState("");
+
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
 
@@ -40,6 +43,13 @@ export const ChatProvider = ({ children }) => {
 
       const resp = await response.json();
       const newMessages = Array.isArray(resp) ? resp : resp.messages || [];
+
+      // ✅ If text exists, store it separately for live display
+      if (newMessages.length > 0 && newMessages[0].text) {
+        setLiveText(newMessages[0].text);
+        console.log(liveText,'from hook')
+      }
+
       setMessages((prev) => [...prev, ...newMessages]);
     } catch (err) {
       console.error("Chat fetch error:", err);
@@ -63,6 +73,12 @@ export const ChatProvider = ({ children }) => {
 
       const resp = await response.json();
       const newMessages = Array.isArray(resp) ? resp : resp.messages || [];
+
+      // ✅ Store LLM text for live display
+      if (newMessages.length > 0 && newMessages[0].text) {
+        setLiveText(newMessages[0].text);
+      }
+
       setMessages((prev) => [...prev, ...newMessages]);
     } catch (err) {
       console.error("Voice fetch error:", err);
@@ -119,6 +135,9 @@ export const ChatProvider = ({ children }) => {
       value={{
         chat,
         message,
+        messages,
+        liveText, // ✅ make live text accessible
+        setLiveText, // optional: if you want to clear or update manually
         onMessagePlayed,
         loading,
         cameraZoomed,
