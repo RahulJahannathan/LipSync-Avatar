@@ -11,6 +11,10 @@ async def test_simple_server():
         await ws.send("Hello from tester!")
         print("Echo:", await ws.recv())
 
+import base64
+import os
+from datetime import datetime
+
 async def test_main_ws():
     uri = "ws://localhost:3000/ws/chat"  # For main_ws.py
     async with websockets.connect(uri) as ws:
@@ -24,9 +28,33 @@ async def test_main_ws():
         await ws.send(json.dumps({"type": "user_text", "message": "Hi there!", "name": "tessa"}))
 
         # Step 3: read streaming messages until done
+        chunk_counter = 1
+        output_dir = "tts_chunks"
+        os.makedirs(output_dir, exist_ok=True)
+
         while True:
             msg = await ws.recv()
-            print("Received:", msg)
+
+            try:
+                data = json.loads(msg)
+                # Save audio if it's a tts_chunk
+                if data.get("type") == "tts_chunk" and "audio_b64" in data:
+                    # Decode and save to file
+                    audio_bytes = base64.b64decode(data["audio_b64"])
+                    filename = f"chunk_{chunk_counter:03d}.wav"
+                    filepath = os.path.join(output_dir, filename)
+                    with open(filepath, "wb") as f:
+                        f.write(audio_bytes)
+                    print(f"Saved {filepath} ({len(audio_bytes)} bytes)")
+                    chunk_counter += 1
+
+                    # Remove audio before printing
+                    data["audio_b64"] = "<omitted>"
+
+                print("Received:", json.dumps(data))
+            except json.JSONDecodeError:
+                print("Received (raw):", msg)
+
             if '"type": "done"' in msg:
                 break
 
